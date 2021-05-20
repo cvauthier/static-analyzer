@@ -1,0 +1,4 @@
+(library
+  (name libs)
+  (wrapped false)
+	(flags (:standard -warn-error -A)))
