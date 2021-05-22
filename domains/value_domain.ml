@@ -165,63 +165,237 @@ struct
   		| AST_GREATER -> (aux m n AST_LESS, aux n m AST_LESS_EQUAL)
   		| AST_GREATER_EQUAL -> (aux m n AST_LESS_EQUAL, aux n m AST_LESS)
 
-    let bwd_unary: t -> int_unary_op -> t -> t = fun x op r -> meet (unary r op) x
+  let bwd_unary: t -> int_unary_op -> t -> t = fun x op r -> meet (unary r op) x
     
-		let bwd_binary: t -> t -> int_binary_op -> t -> (t * t) = fun x y op r -> match op with
-			| AST_PLUS -> (meet x (binary r y AST_MINUS), meet y (binary r x AST_MINUS))
-			| AST_MINUS -> (meet x (binary r y AST_PLUS), meet y (binary x r AST_MINUS))
-			| AST_MULTIPLY -> begin 
-				let aux x y r = match x,y with
-					| All,All -> All
-					| Nb(x),All -> if Z.equal (Z.rem r x) Z.zero then Nb(x) else Empty
-					| All,Nb(x) -> if Z.equal (Z.rem r x) Z.zero then Nb(Z.div r x) else Empty
-					| Nb(x),Nb(y) -> if Z.equal (Z.mul x y) r then Nb(x) else Empty
-					| Empty,_ | _,Empty -> Empty in
-				match r with
-					| All -> x,y
-					| Empty -> Empty,Empty
-					| Nb(r) -> (aux x y r, aux y x r)
+	let bwd_binary: t -> t -> int_binary_op -> t -> (t * t) = fun x y op r -> match op with
+		| AST_PLUS -> (meet x (binary r y AST_MINUS), meet y (binary r x AST_MINUS))
+		| AST_MINUS -> (meet x (binary r y AST_PLUS), meet y (binary x r AST_MINUS))
+		| AST_MULTIPLY -> begin 
+			let aux x y r = match x,y with
+				| All,All -> All
+				| Nb(x),All -> if Z.equal (Z.rem r x) Z.zero then Nb(x) else Empty
+				| All,Nb(x) -> if Z.equal (Z.rem r x) Z.zero then Nb(Z.div r x) else Empty
+				| Nb(x),Nb(y) -> if Z.equal (Z.mul x y) r then Nb(x) else Empty
+				| Empty,_ | _,Empty -> Empty in
+			match r with
+				| All -> x,y
+				| Empty -> Empty,Empty
+				| Nb(r) -> (aux x y r, aux y x r)
+			end
+		| AST_DIVIDE -> begin match x,y,r with
+				| _,_,Empty | _,Empty,_ | Empty,_,_ -> Empty,All
+				| _,Nb(y),_ when Z.equal y Z.zero -> Empty,Empty
+				| _,_,All -> x,y
+				| All,All,Nb(r) -> if Z.equal r Z.zero then Nb(Z.zero),All else All,All
+				| All,Nb(y),Nb(r) -> Nb(Z.mul y r),Nb(y)
+				| Nb(x),Nb(y),Nb(r) -> if Z.equal (Z.div x y) r then Nb(x),Nb(y) else Empty,Empty 
+				| Nb(x),All,Nb(r) -> Nb(x),All (* to refine ? *)
+			end
+		| AST_MODULO -> begin match x,y,r with
+				| _,_,Empty | _,Empty,_ | Empty,_,_ -> Empty,All
+				| _,Nb(y),_ when Z.equal y Z.zero -> Empty,Empty
+				| _,_,All -> x,y
+				| All,All,Nb(r) -> All,All
+				| Nb(x),Nb(y),Nb(r) -> if Z.equal (Z.rem x y) r then Nb(x),Nb(y) else Empty,Empty 
+				| _,_,_ -> x,y (* to refine ? *)
+			end
+
+	let join: t -> t -> t = fun n m -> match n,m with
+		| All,_ | _,All -> All
+		| Empty,p | p,Empty -> p
+		| Nb(n),Nb(m) -> if Z.equal n m then Nb(n) else All
+
+  let widen: t -> t -> t = join
+
+  let subset: t -> t -> bool = fun n m -> match n,m with
+		| _,All -> true
+		| Nb(n),Nb(m) -> Z.equal n m
+		| Empty,_ -> true
+		| _ -> false
+
+  let is_bottom: t -> bool = function
+		| Empty -> true
+		| All | Nb(_) -> false
+
+  let print: out_channel -> t -> unit = fun outc n -> 
+		let fmt = Format.formatter_of_out_channel outc in
+		match n with
+			| Empty -> Format.fprintf fmt "bot"
+			| Nb(n) -> Format.fprintf fmt "{%a}" Z.pp_print n
+			| All -> Format.fprintf fmt "[-oo;+oo]"
+end
+
+module Interval : VALUE_DOMAIN = 
+struct
+	
+	exception Bad_bounds
+
+	type bound = | Inf | NInf | Nb of Z.t
+	type t = Empty | Interval of bound * bound
+	
+	let lt_bd: bound -> bound -> bool = fun b1 b2 -> match b1,b2 with
+		| NInf,_ | _,Inf -> true
+		| Inf,_ | _,NInf -> false
+		| Nb(x),Nb(y) -> Z.lt x y
+	
+	let eq_bd: bound -> bound -> bool = fun b1 b2 -> match b1,b2 with
+		| Inf,Inf -> true
+		| NInf,NInf -> true
+		| Nb(x),Nb(y) -> Z.equal x y
+		| _ -> false
+
+	let leq_bd: bound -> bound -> bool = fun b1 b2 -> (eq_bd b1 b2) || (lt_bd b1 b2)
+	
+	let max_bd: bound -> bound -> bound = fun b1 b2 -> if leq_bd b1 b2 then b2 else b1
+	let min_bd: bound -> bound -> bound = fun b1 b2 -> if leq_bd b1 b2 then b1 else b2
+
+	let umin_bd: bound -> bound = function
+		| NInf -> Inf
+		| Inf -> NInf
+		| Nb(x) -> Nb(Z.sub Z.zero x)
+	
+	let add_bd: bound -> bound -> bound = fun b1 b2 -> match b1,b2 with
+		| Inf,NInf | NInf,Inf -> raise Bad_bounds
+		| Inf,_ | _,Inf -> Inf
+		| NInf,_ | _,NInf -> NInf
+		| Nb(x),Nb(y) -> Nb(Z.add x y)
+	
+	let mul_bd: bound -> bound -> bound = fun b1 b2 -> match b1,b2 with
+		| Inf,Inf | NInf,NInf -> Inf
+		| Inf,NInf | NInf,Inf -> NInf
+		| Inf,Nb(x) | Nb(x),Inf -> if Z.lt Z.zero x then Inf else if Z.lt x Z.zero then NInf else Nb(Z.zero)
+		| NInf,Nb(x) | Nb(x),NInf -> if Z.lt Z.zero x then NInf else if Z.lt x Z.zero then Inf else Nb(Z.zero)
+		| Nb(x),Nb(y) -> Nb(Z.mul x y)
+	
+	let div_bd: bound -> bound -> bound = fun b1 b2 -> match b1,b2 with
+		| Inf,Inf | Inf,NInf | NInf,Inf | NInf,NInf -> raise Bad_bounds
+		| Inf,Nb(x) -> if Z.lt Z.zero x then Inf else if Z.lt x Z.zero then NInf else raise Bad_bounds
+		| NInf,Nb(x) -> if Z.lt Z.zero x then NInf else if Z.lt x Z.zero then Inf else raise Bad_bounds
+		| Nb(_),Inf -> Nb(Z.zero)
+		| Nb(_),NInf -> Nb(Z.zero)
+		| Nb(x),Nb(y) -> if Z.equal y Z.zero then raise Bad_bounds else Nb(Z.div x y)
+
+	let make_interval: bound -> bound -> t = fun b1 b2 -> match b1,b2 with
+		| Inf,_ | _,NInf -> Empty
+		| Nb(x),Nb(y) when Z.lt y x -> Empty
+		| _ -> Interval(b1,b2)
+
+	let top: t = Interval(NInf,Inf)
+
+	let bottom: t = Empty
+
+	let const: Z.t -> t = fun x -> Interval(Nb(x),Nb(x))
+	
+	let rand: Z.t -> Z.t -> t = fun x y -> make_interval (Nb(x)) (Nb(y)) 
+
+	let join: t -> t -> t = fun it1 it2 -> match it1,it2 with
+		| it,Empty | Empty,it -> it
+		| Interval(b1,b2), Interval(c1,c2) -> Interval(min_bd b1 c1, max_bd b2 c2)
+
+  let meet: t -> t -> t = fun it1 it2 -> match it1,it2 with
+		| _,Empty | Empty,_ -> Empty
+		| Interval(b1,b2),Interval(c1,c2) -> make_interval (max_bd b1 c1) (min_bd b2 c2)
+
+  let unary: t -> int_unary_op -> t = fun it op -> match op,it with
+		| AST_UNARY_PLUS,it -> it
+		| AST_UNARY_MINUS,Empty -> Empty
+		| AST_UNARY_MINUS,Interval(b1,b2) -> Interval(umin_bd b2, umin_bd b1)
+
+  let binary: t -> t -> int_binary_op -> t = fun it1 it2 op -> match it1,it2 with
+		| Empty,_ | _,Empty -> Empty
+		| Interval(b1,b2),Interval(c1,c2) -> begin 
+				match op with
+					| AST_PLUS -> Interval(add_bd b1 c1, add_bd b2 c2)
+					| AST_MINUS -> Interval(add_bd c1 (umin_bd c2), add_bd b2 (umin_bd c1))
+					| AST_MULTIPLY -> begin
+							let zero = Nb(Z.zero) and
+									min_one = Nb(Z.pred Z.zero) in
+							let rec aux (b1,b2) (c1,c2) = match (b1,b2),(c1,c2) with
+								| _ when leq_bd zero b1 && leq_bd zero c1 -> Interval(mul_bd b1 c1, mul_bd b2 c2)
+								| _ when lt_bd b2 zero 										-> unary (aux (umin_bd b2, umin_bd b1) (c1,c2)) AST_UNARY_MINUS
+								| _ when lt_bd b1 zero 										-> join (aux (b1,min_one) (c1,c2)) (aux (zero,b2) (c1,c2))
+								| _																				-> aux (c1,c2) (b1,b2)
+							in aux (b1,b2) (c1,c2)
+						end
+					| AST_DIVIDE | AST_MODULO -> begin
+							let zero = Nb(Z.zero) and
+									one = Nb(Z.one) and
+									min_one = Nb(Z.pred Z.zero) in
+							let rec aux (b1,b2) (c1,c2) = match (b1,b2),(c1,c2) with
+								| _ when leq_bd zero b1 && lt_bd zero c1  -> begin
+										if op = AST_MODULO then Interval(zero,add_bd c2 min_one)
+										else Interval(div_bd b1 c2, div_bd b2 c1)
+									end
+								| _ when lt_bd b2 zero 										-> unary (aux (umin_bd b2, umin_bd b1) (c1,c2)) AST_UNARY_MINUS
+								| _ when lt_bd c2 zero 										-> unary (aux (b1,b2) (umin_bd c2, umin_bd c1)) AST_UNARY_MINUS
+								| _ when lt_bd b1 zero 										-> join (aux (b1,min_one) (c1,c2)) (aux (zero,b2) (c1,c2))
+								| _ when leq_bd c1 zero && leq_bd zero c2 -> begin
+										let res1 = if lt_bd zero c2 then aux (b1,b2) (one,c2) else Empty in
+										let res2 = if lt_bd c1 zero then aux (b1,b2) (c2,min_one) else Empty in
+										join res1 res2
+									end
+								| _																				-> raise Bad_bounds
+							in aux (b1,b2) (c1,c2)
+						end
+			end
+
+	let compare: t -> t -> compare_op -> (t * t) = fun n m op -> 
+		let aux n m op = match op with
+			| AST_NOT_EQUAL -> begin match n,m with
+					| _,Empty | Empty,_ -> Empty
+					| Interval(b1,b2),Interval(c1,c2) when eq_bd c1 c2 -> begin
+							let d1 = if eq_bd c1 b1 then add_bd b1 (Nb(Z.one)) else b1 in
+							let d2 = if eq_bd c1 b2 then add_bd b2 (Nb(Z.pred Z.zero)) else b2 in
+							make_interval d1 d2
+						end
+					| n,_ -> n
 				end
-			| AST_DIVIDE -> begin match x,y,r with
-					| _,_,Empty | _,Empty,_ | Empty,_,_ -> Empty,All
-					| _,Nb(y),_ when Z.equal y Z.zero -> Empty,Empty
-					| _,_,All -> x,y
-					| All,All,Nb(r) -> if Z.equal r Z.zero then Nb(Z.zero),All else All,All
-					| All,Nb(y),Nb(r) -> Nb(Z.mul y r),Nb(y)
-					| Nb(x),Nb(y),Nb(r) -> if Z.equal (Z.div x y) r then Nb(x),Nb(y) else Empty,Empty 
-					| Nb(x),All,Nb(r) -> Nb(x),All (* to refine ? *)
-				end
-			| AST_MODULO -> begin match x,y,r with
-					| _,_,Empty | _,Empty,_ | Empty,_,_ -> Empty,All
-					| _,Nb(y),_ when Z.equal y Z.zero -> Empty,Empty
-					| _,_,All -> x,y
-					| All,All,Nb(r) -> All,All
-					| Nb(x),Nb(y),Nb(r) -> if Z.equal (Z.rem x y) r then Nb(x),Nb(y) else Empty,Empty 
-					| _,_,_ -> x,y (* to refine ? *)
-				end
+			| AST_LESS | AST_LESS_EQUAL -> begin match n,m with
+					| _,Empty | Empty,_ -> Empty
+					| n,Interval(_,c2) -> meet n (Interval(NInf,c2))
+				end 
+			| _ -> Empty in
+		match op with
+			| AST_EQUAL -> let p = meet n m in (p,p) 
+			| AST_NOT_EQUAL  -> (aux n m op, aux m n op) 
+  		| AST_LESS -> (aux n m AST_LESS, aux m n AST_LESS_EQUAL)
+  		| AST_LESS_EQUAL -> (aux n m AST_LESS_EQUAL, aux m n AST_LESS)
+  		| AST_GREATER -> (aux m n AST_LESS, aux n m AST_LESS_EQUAL)
+  		| AST_GREATER_EQUAL -> (aux m n AST_LESS_EQUAL, aux n m AST_LESS)
 
-		let join: t -> t -> t = fun n m -> match n,m with
-			| All,_ | _,All -> All
-			| Empty,p | p,Empty -> p
-			| Nb(n),Nb(m) -> if Z.equal n m then Nb(n) else All
+	let bwd_unary: t -> int_unary_op -> t -> t = fun x op r -> meet x (unary r op)
 
-    let widen: t -> t -> t = join
+  let bwd_binary: t -> t -> int_binary_op -> t -> (t * t) = fun it1 it2 op r -> match op with 
+		| AST_PLUS -> (meet it1 (binary r it2 AST_MINUS), meet it2 (binary r it1 AST_MINUS))
+		| AST_MINUS -> (meet it1 (binary r it2 AST_PLUS), meet it2 (binary it1 r AST_MINUS))
+		| AST_MULTIPLY -> (meet it1 (binary r it2 AST_DIVIDE), meet it2 (binary r it1 AST_DIVIDE))
+		| AST_DIVIDE | AST_MODULO -> it1,it2
 
-    let subset: t -> t -> bool = fun n m -> match n,m with
-			| _,All -> true
-			| Nb(n),Nb(m) -> Z.equal n m
-			| Empty,_ -> true
-			| _ -> false
+  let widen: t -> t -> t = fun it1 it2 -> match it1,it2 with
+		| Empty,it | it,Empty -> it
+		| Interval(b1,b2),Interval(c1,c2) -> begin
+				let d1 = if lt_bd c1 b1 then NInf else b1 in
+				let d2 = if lt_bd b2 c2 then Inf else b2 in
+				make_interval d1 d2
+			end
 
-    let is_bottom: t -> bool = function
-			| Empty -> true
-			| All | Nb(_) -> false
+  let subset: t -> t -> bool = fun it1 it2 -> match it1,it2 with
+		| Empty,_ -> true
+		| _,Empty -> false
+		| Interval(b1,b2),Interval(c1,c2) -> (leq_bd c1 b1) && (leq_bd b2 c2)
 
-    let print: out_channel -> t -> unit = fun outc n -> 
-			let fmt = Format.formatter_of_out_channel outc in
-			match n with
-				| Empty -> Format.fprintf fmt "bot"
-				| Nb(n) -> Format.fprintf fmt "{%a}" Z.pp_print n
-				| All -> Format.fprintf fmt "]-oo;+oo["
+	let is_bottom: t -> bool = function
+	 	| Empty -> true
+		| Interval(_,_) -> false
+
+  let print: out_channel -> t -> unit = fun outc it ->
+    let fmt = Format.formatter_of_out_channel outc in
+		let pp_bd fmt = function
+			| Inf -> Format.fprintf fmt "+oo"
+			| NInf -> Format.fprintf fmt "-oo"
+			| Nb(x) -> Format.fprintf fmt "%a" Z.pp_print x in
+		match it with
+			| Empty -> Format.fprintf fmt "bot"
+			| Interval(b1,b2) -> Format.fprintf fmt "[%a,%a]" pp_bd b1 pp_bd b2
 end
 
