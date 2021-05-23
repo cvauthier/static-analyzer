@@ -85,7 +85,8 @@ module type VALUE_DOMAIN =
     val is_bottom: t -> bool
 
     (* print abstract element *)
-    val print: out_channel -> t -> unit
+    val pp_val: Format.formatter -> t -> unit
+		val print: out_channel -> t -> unit
 
 end
 
@@ -217,12 +218,14 @@ struct
 		| Empty -> true
 		| All | Nb(_) -> false
 
-  let print: out_channel -> t -> unit = fun outc n -> 
-		let fmt = Format.formatter_of_out_channel outc in
+  let pp_val: Format.formatter -> t -> unit = fun fmt n -> 
 		match n with
 			| Empty -> Format.fprintf fmt "bot"
 			| Nb(n) -> Format.fprintf fmt "{%a}" Z.pp_print n
 			| All -> Format.fprintf fmt "[-oo;+oo]"
+
+  let print: out_channel -> t -> unit = fun outc n ->
+    Format.fprintf (Format.formatter_of_out_channel outc) "%a" pp_val n
 end
 
 module Interval : VALUE_DOMAIN = 
@@ -388,8 +391,7 @@ struct
 	 	| Empty -> true
 		| Interval(_,_) -> false
 
-  let print: out_channel -> t -> unit = fun outc it ->
-    let fmt = Format.formatter_of_out_channel outc in
+	let pp_val: Format.formatter -> t -> unit = fun fmt it ->
 		let pp_bd fmt = function
 			| Inf -> Format.fprintf fmt "+oo"
 			| NInf -> Format.fprintf fmt "-oo"
@@ -397,5 +399,9 @@ struct
 		match it with
 			| Empty -> Format.fprintf fmt "bot"
 			| Interval(b1,b2) -> Format.fprintf fmt "[%a,%a]" pp_bd b1 pp_bd b2
+
+  let print: out_channel -> t -> unit = fun outc it ->
+    Format.fprintf (Format.formatter_of_out_channel outc) "%a" pp_val it
+
 end
 
