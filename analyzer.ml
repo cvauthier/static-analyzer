@@ -16,11 +16,13 @@
 
 (* parse filename *)
 let doit filename =
+	let module Dom = Domain.Make(Value_domain.Constant) in
+	let module Iter = Iterator.Make(Dom) in
   let prog = File_parser.parse_file filename in
   let cfg = Tree_to_cfg.prog prog in
   Printf.printf "%a" Cfg_printer.print_cfg cfg;
   Cfg_printer.output_dot !Options.cfg_out cfg;
-  Iterator.iterate cfg
+  Iter.iterate cfg
 
 
 (* parses arguments to get filename *)
