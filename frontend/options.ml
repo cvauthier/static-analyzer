@@ -17,17 +17,22 @@ module IMap = Map.Make(String)
 open Arg
 
 (* Flags *)
+
 let silent  = ref false
 
 (* string arguments *)
+
 let file = ref ""
 let cfg_out = ref ""
+let domain_type = ref ""
 
 let args = [
   "--silent", Set silent,
     " run the analyzer in silent mode (print only errors and node invariants)";
   "--dot-out", Set_string cfg_out,
-    " Print the cfg in this file (default is cfg.dot)";
+    " print the cfg in this file (default is cfg.dot)";
+	"--domain", Set_string domain_type,
+		" abstract domain to use (default is interval)";
 ] |> align
 
 let usage = "usage: ./analyzer.exe [options] filename.c"

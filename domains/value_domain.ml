@@ -279,6 +279,10 @@ struct
 		| Inf,_ | _,NInf -> Empty
 		| Nb(x),Nb(y) when Z.lt y x -> Empty
 		| _ -> Interval(b1,b2)
+	
+	let umin_int: t -> t = function 
+		| Empty -> Empty
+		| Interval(b1,b2) -> Interval(umin_bd b2, umin_bd b1)
 
 	let top: t = Interval(NInf,Inf)
 
@@ -298,8 +302,7 @@ struct
 
   let unary: t -> int_unary_op -> t = fun it op -> match op,it with
 		| AST_UNARY_PLUS,it -> it
-		| AST_UNARY_MINUS,Empty -> Empty
-		| AST_UNARY_MINUS,Interval(b1,b2) -> Interval(umin_bd b2, umin_bd b1)
+		| AST_UNARY_MINUS,it -> umin_int it 
 
   let binary: t -> t -> int_binary_op -> t = fun it1 it2 op -> match it1,it2 with
 		| Empty,_ | _,Empty -> Empty
@@ -312,7 +315,7 @@ struct
 									min_one = Nb(Z.pred Z.zero) in
 							let rec aux (b1,b2) (c1,c2) = match (b1,b2),(c1,c2) with
 								| _ when leq_bd zero b1 && leq_bd zero c1 -> Interval(mul_bd b1 c1, mul_bd b2 c2)
-								| _ when lt_bd b2 zero 										-> unary (aux (umin_bd b2, umin_bd b1) (c1,c2)) AST_UNARY_MINUS
+								| _ when lt_bd b2 zero 										-> umin_int (aux (umin_bd b2, umin_bd b1) (c1,c2)) 
 								| _ when lt_bd b1 zero 										-> join (aux (b1,min_one) (c1,c2)) (aux (zero,b2) (c1,c2))
 								| _																				-> aux (c1,c2) (b1,b2)
 							in aux (b1,b2) (c1,c2)
@@ -326,8 +329,8 @@ struct
 										if op = AST_MODULO then Interval(zero,add_bd c2 min_one)
 										else Interval(div_bd b1 c2, div_bd b2 c1)
 									end
-								| _ when lt_bd b2 zero 										-> unary (aux (umin_bd b2, umin_bd b1) (c1,c2)) AST_UNARY_MINUS
-								| _ when lt_bd c2 zero 										-> unary (aux (b1,b2) (umin_bd c2, umin_bd c1)) AST_UNARY_MINUS
+								| _ when lt_bd b2 zero 										-> umin_int (aux (umin_bd b2, umin_bd b1) (c1,c2))
+								| _ when lt_bd c2 zero 										-> umin_int (aux (b1,b2) (umin_bd c2, umin_bd c1)) 
 								| _ when lt_bd b1 zero 										-> join (aux (b1,min_one) (c1,c2)) (aux (zero,b2) (c1,c2))
 								| _ when leq_bd c1 zero && leq_bd zero c2 -> begin
 										let res1 = if lt_bd zero c2 then aux (b1,b2) (one,c2) else Empty in
@@ -352,16 +355,18 @@ struct
 				end
 			| AST_LESS | AST_LESS_EQUAL -> begin match n,m with
 					| _,Empty | Empty,_ -> Empty
-					| n,Interval(_,c2) -> meet n (Interval(NInf,c2))
+					| n,Interval(_,Inf) -> n
+					| n,Interval(_,Nb(c2)) -> meet n (Interval(NInf,Nb(if op = AST_LESS then (Z.sub c2 Z.one) else c2)))
+					| n,Interval(_,NInf) -> Empty
 				end 
 			| _ -> Empty in
 		match op with
 			| AST_EQUAL -> let p = meet n m in (p,p) 
 			| AST_NOT_EQUAL  -> (aux n m op, aux m n op) 
-  		| AST_LESS -> (aux n m AST_LESS, aux m n AST_LESS_EQUAL)
-  		| AST_LESS_EQUAL -> (aux n m AST_LESS_EQUAL, aux m n AST_LESS)
-  		| AST_GREATER -> (aux m n AST_LESS, aux n m AST_LESS_EQUAL)
-  		| AST_GREATER_EQUAL -> (aux m n AST_LESS_EQUAL, aux n m AST_LESS)
+  		| AST_LESS -> (aux n m AST_LESS, umin_int (aux (umin_int m) (umin_int n) AST_LESS))
+  		| AST_LESS_EQUAL -> (aux n m AST_LESS_EQUAL, umin_int (aux (umin_int m) (umin_int n) AST_LESS_EQUAL))
+  		| AST_GREATER -> (umin_int (aux (umin_int n) (umin_int m) AST_LESS), aux m n AST_LESS)
+  		| AST_GREATER_EQUAL -> (umin_int (aux (umin_int n) (umin_int m) AST_LESS_EQUAL), aux m n AST_LESS_EQUAL)
 
 	let bwd_unary: t -> int_unary_op -> t -> t = fun x op r -> meet x (unary r op)
 

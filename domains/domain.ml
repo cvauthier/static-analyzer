@@ -130,8 +130,7 @@ struct
   let is_bottom: t -> bool = fun env -> VarMap.is_empty env || VarMap.exists (fun _ n -> V.is_bottom n) env
 
 	let print: out_channel -> t -> unit = fun outc env ->
-		VarMap.iter (fun variable value -> Printf.fprintf outc "%a=%a; " Cfg_printer.print_var variable V.print value) env;
-		Printf.fprintf outc "\n"
+		VarMap.iter (fun variable value -> Printf.fprintf outc "%a=%a; " Cfg_printer.print_var variable V.print value) env
 
 end
 

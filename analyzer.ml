@@ -13,10 +13,17 @@
   You should modify this file to call your functions instead!
 *)
 
-
+let select_value_domain (dname : string) : (module Value_domain.VALUE_DOMAIN) =
+	match dname with 
+		| "interval" | "" -> (module Value_domain.Interval)
+		| "constant" -> (module Value_domain.Constant)
+		| _ -> (Printf.eprintf "Unrecognized domain"; exit 0) 
+	
 (* parse filename *)
 let doit filename =
-	let module Dom = Domain.Make(Value_domain.Constant) in
+	let vdom = select_value_domain !Options.domain_type in
+	let module Vdom = (val vdom) in
+	let module Dom = Domain.Make(Vdom) in
 	let module Iter = Iterator.Make(Dom) in
   let prog = File_parser.parse_file filename in
   let cfg = Tree_to_cfg.prog prog in
