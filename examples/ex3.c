@@ -1,11 +1,18 @@
-int x = rand(-100, 100);
 
-void main(){
-	int i = rand(10,11);
-	int j;
-	while(i > 0){
-		int k;
-		k = x + i;
-		i--;
+void main()
+{
+	int x = rand(0,10);
+	while(1 > 0)
+	{
+		if (x < 10000)
+		{
+			x++;
+		}
+		else
+		{
+			x *= -1;
+		}
+		assert(x <= 10000);
+		assert(x >= -10000);
 	}
 }

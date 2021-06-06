@@ -62,7 +62,7 @@ struct
   			| CFG_assert(expr) -> begin
 						let res = D.guard src_val expr in
 						if not (D.subset src_val res) then ArcHash.replace fenv.fenv_failed_asserts arc ();
-						src_val
+						res
 					end
   			| CFG_call(f) -> begin
 						if not (ArcHash.mem fenv.fenv_children arc) then
@@ -154,6 +154,7 @@ struct
 			let arc = List.hd (!init_entry).node_out in
 			(match arc.arc_inst with
 				| CFG_assign(var,expr) -> curr := D.assign !curr var expr 
+				| CFG_skip _ -> ()
 				| _ -> failwith "error");
 			init_entry := arc.arc_dst;
 			NodeHash.replace env.env_init_val_map !init_entry !curr;

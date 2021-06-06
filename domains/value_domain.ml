@@ -100,10 +100,13 @@ struct
 	let const: Z.t -> t = fun x -> Nb(x)
 	let rand: Z.t -> Z.t -> t = fun x y -> if Z.equal x y then Nb(x) else if Z.gt x y then Empty else All
 
-	let unary: t -> int_unary_op -> t = fun n op -> match (op,n) with
-  	| (AST_UNARY_PLUS,n)  -> n
-  	| (AST_UNARY_MINUS,Nb(n)) -> Nb(Z.sub Z.zero n)
-		| (AST_UNARY_MINUS,n) -> n
+	let umin: t -> t = function 
+		| Nb(n) -> Nb(Z.sub Z.zero n)
+		| n -> n
+
+	let unary: t -> int_unary_op -> t = fun n op -> match op with
+  	| AST_UNARY_PLUS  -> n
+  	| AST_UNARY_MINUS -> umin n
 	
 	let meet: t -> t -> t = fun n m -> match n,m with
 		| Empty,_ | _,Empty -> Empty
@@ -160,10 +163,10 @@ struct
 		match op with
 			| AST_EQUAL -> let p = meet n m in (p,p) 
 			| AST_NOT_EQUAL  -> (aux n m op, aux m n op) 
-  		| AST_LESS -> (aux n m AST_LESS, aux m n AST_LESS_EQUAL)
-  		| AST_LESS_EQUAL -> (aux n m AST_LESS_EQUAL, aux m n AST_LESS)
-  		| AST_GREATER -> (aux m n AST_LESS, aux n m AST_LESS_EQUAL)
-  		| AST_GREATER_EQUAL -> (aux m n AST_LESS_EQUAL, aux n m AST_LESS)
+  		| AST_LESS -> (aux n m AST_LESS, umin (aux (umin m) (umin n) AST_LESS))
+  		| AST_LESS_EQUAL -> (aux n m AST_LESS_EQUAL, umin (aux (umin m) (umin n) AST_LESS_EQUAL))
+  		| AST_GREATER -> (umin (aux (umin n) (umin m) AST_LESS), aux m n AST_LESS)
+  		| AST_GREATER_EQUAL -> (umin (aux (umin n) (umin m) AST_LESS_EQUAL), aux m n AST_LESS_EQUAL)
 
   let bwd_unary: t -> int_unary_op -> t -> t = fun x op r -> meet (unary r op) x
     
@@ -182,23 +185,7 @@ struct
 				| Empty -> Empty,Empty
 				| Nb(r) -> (aux x y r, aux y x r)
 			end
-		| AST_DIVIDE -> begin match x,y,r with
-				| _,_,Empty | _,Empty,_ | Empty,_,_ -> Empty,All
-				| _,Nb(y),_ when Z.equal y Z.zero -> Empty,Empty
-				| _,_,All -> x,y
-				| All,All,Nb(r) -> if Z.equal r Z.zero then Nb(Z.zero),All else All,All
-				| All,Nb(y),Nb(r) -> Nb(Z.mul y r),Nb(y)
-				| Nb(x),Nb(y),Nb(r) -> if Z.equal (Z.div x y) r then Nb(x),Nb(y) else Empty,Empty 
-				| Nb(x),All,Nb(r) -> Nb(x),All (* to refine ? *)
-			end
-		| AST_MODULO -> begin match x,y,r with
-				| _,_,Empty | _,Empty,_ | Empty,_,_ -> Empty,All
-				| _,Nb(y),_ when Z.equal y Z.zero -> Empty,Empty
-				| _,_,All -> x,y
-				| All,All,Nb(r) -> All,All
-				| Nb(x),Nb(y),Nb(r) -> if Z.equal (Z.rem x y) r then Nb(x),Nb(y) else Empty,Empty 
-				| _,_,_ -> x,y (* to refine ? *)
-			end
+		| AST_DIVIDE | AST_MODULO -> x,y 
 
 	let join: t -> t -> t = fun n m -> match n,m with
 		| All,_ | _,All -> All
@@ -309,7 +296,7 @@ struct
 		| Interval(b1,b2),Interval(c1,c2) -> begin 
 				match op with
 					| AST_PLUS -> Interval(add_bd b1 c1, add_bd b2 c2)
-					| AST_MINUS -> Interval(add_bd c1 (umin_bd c2), add_bd b2 (umin_bd c1))
+					| AST_MINUS -> Interval(add_bd b1 (umin_bd c2), add_bd b2 (umin_bd c1))
 					| AST_MULTIPLY -> begin
 							let zero = Nb(Z.zero) and
 									min_one = Nb(Z.pred Z.zero) in

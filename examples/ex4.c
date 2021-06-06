@@ -1,8 +1,8 @@
 int a = rand(-100, 100);
 
-int bar(int x)
+int bar(int z)
 {
-	return x*x*x;
+	return z*z*z;
 }
 
 int foo(int x, int y)

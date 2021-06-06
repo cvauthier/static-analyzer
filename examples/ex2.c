@@ -7,4 +7,7 @@ void main()
     x--;
     if (x<=0) break;
   }
+
+	assert (x >= -1);
+	assert (i == 10);
 }
