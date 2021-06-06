@@ -10,10 +10,13 @@ all:
 	@rm -f analyzer.exe
 	@dune build analyzer.exe
 	@ln -sf _build/default/analyzer.exe analyzer
+	./test.sh
 
-clean:
+clean: clean-ex
 	@rm -rf _build/ analyzer *~ */*~
-	@rm -rf *.dot *.pdf */*.dot */*.pdf
+
+clean-ex:
+	@rm -rf *.dot *.pdf examples/*.dot examples/*.pdf examples/*.txt
 
 doc: all
 	@dune build @doc-private
