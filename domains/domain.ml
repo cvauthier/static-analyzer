@@ -125,7 +125,7 @@ struct
 		VarMap.map2o (fun _ n -> n) (fun _ m -> m) (fun _ n m -> V.widen n m) env1 env2
 
   let subset: t -> t -> bool = fun env1 env2 -> 
-		VarMap.for_all2o (fun _ _ -> false) (fun _ _ -> true) (fun _ v1 v2 -> V.subset v1 v2) env1 env2 
+		VarMap.for_all2o (fun _ v -> V.is_bottom v) (fun _ _ -> true) (fun _ v1 v2 -> V.subset v1 v2) env1 env2 
 
   let is_bottom: t -> bool = fun env -> VarMap.is_empty env || VarMap.exists (fun _ n -> V.is_bottom n) env
 

@@ -234,8 +234,8 @@ struct
 	type t = Empty | Interval of bound * bound
 	
 	let lt_bd: bound -> bound -> bool = fun b1 b2 -> match b1,b2 with
-		| NInf,_ | _,Inf -> true
 		| Inf,_ | _,NInf -> false
+		| NInf,_ | _,Inf -> true
 		| Nb(x),Nb(y) -> Z.lt x y
 	
 	let eq_bd: bound -> bound -> bool = fun b1 b2 -> match b1,b2 with

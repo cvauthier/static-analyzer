@@ -66,7 +66,7 @@ struct
 					end
   			| CFG_call(f) -> begin
 						if not (ArcHash.mem fenv.fenv_children arc) then
-							(ArcHash.add fenv.fenv_children arc (init_fenv f (Some(arc))));
+							ArcHash.add fenv.fenv_children arc (init_fenv f (Some(arc)));
 						iterate_function { env with env_curr_fenv = ArcHash.find fenv.fenv_children arc } src_val f
 					end
 		end
